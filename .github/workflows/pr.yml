@@ -11,6 +11,7 @@ jobs:
       - uses: ./.github/actions/pnpm-install
         with:
           target: '.'
+      - uses: oven-sh/setup-bun@v1
       - name: Lint
         run: pnpm lint
       - name: Test

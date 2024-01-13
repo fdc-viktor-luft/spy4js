@@ -1,4 +1,7 @@
 import { Spy } from '../../src/spy';
+import { beforeEach, afterEach, expect, describe, it } from 'vitest';
+
+Spy.setup({ beforeEach, afterEach, expect });
 
 const toBeMocked1 = { func: (v: string) => 'foo:' + v };
 const toBeMocked2 = { func: (v: string) => 'foo:' + v };

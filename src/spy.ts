@@ -7,10 +7,10 @@
 import { COMPARE, MAPPER, differenceOf, type OptionalMessageOrError, toError, type MessageOrError } from './utils';
 import { SpyRegistry } from './registry';
 import { serialize, IGNORE } from './serializer';
-import { createMock, initMocks, type Mockable } from './mock';
-import { TestSuite } from './test-suite';
+import { createMock, type Mockable } from './mock';
 import { Symbols } from './symbols';
 import { createMinimalComponent, createGenericComponent } from './react';
+import { Config, configure, configureAll } from './config';
 
 const CallOrder = {
     Idx: 0,
@@ -28,46 +28,25 @@ const registry = new SpyRegistry();
 
 let __LOCK__ = true;
 
-/**
- * Very jest specific snapshot serialization behavior.
- *
- * Hint: We are casting here anything to any, because not all users might
- * have typed those functions correctly and should not see flow errors
- * related to those types.
- */
-TestSuite.addSnapshotSerializer({
-    test: (v: any) => v && v[Symbols.isSpy],
-    print: (spy: SpyInstance) => spy[Symbols.snap],
-});
+type SpyInstanceConfig = { useOwnEquals: boolean; persistent: boolean };
 
-export type GeneralSpyConfig = { useOwnEquals: boolean; enforceOrder: boolean; useGenericReactMocks: boolean };
-export type SpyConfig = { useOwnEquals: boolean; persistent: boolean };
-/**
- * Initial default settings for every
- * spy instance. Can be modified only
- * implicitly by "Spy.configure".
- *
- * @type {{useOwnEquals: boolean}}
- */
-const DefaultSettings: GeneralSpyConfig = {
-    useOwnEquals: true,
-    enforceOrder: false,
-    useGenericReactMocks: false,
-};
-
-export type SpyInstance = {
-    (...args: any[]): any;
-    configure: (config: Partial<SpyConfig>) => SpyInstance;
-    calls: (...funcs: Function[]) => SpyInstance;
-    returns: (...args: any[]) => SpyInstance;
-    resolves: (...args: any[]) => SpyInstance;
-    rejects: (...msgOrErrors: OptionalMessageOrError[]) => SpyInstance;
-    throws: (msgOrError?: MessageOrError) => SpyInstance;
-    reset: () => SpyInstance;
-    restore: () => SpyInstance;
-    transparent: () => SpyInstance;
-    transparentAfter: (callCount: number) => SpyInstance;
-    addSnapshotSerializer: (serialize: string | ((...args: any[]) => string)) => SpyInstance;
+type FlatAwaited<TVal> = TVal extends PromiseLike<infer TAwaited> ? TAwaited : never;
+export type SpyInstance<TFunc extends (...args: any) => any = (...args: any) => any> = TFunc & {
+    configure: (config: Partial<SpyInstanceConfig>) => SpyInstance<TFunc>;
+    calls: (...funcs: TFunc[]) => SpyInstance<TFunc>;
+    returns: (...args: ReturnType<TFunc>[]) => SpyInstance<TFunc>;
+    resolves: FlatAwaited<ReturnType<TFunc>> extends never
+        ? never
+        : (...args: FlatAwaited<ReturnType<TFunc>>[]) => SpyInstance<TFunc>;
+    rejects: FlatAwaited<ReturnType<TFunc>> extends never
+        ? never
+        : (...msgOrErrors: OptionalMessageOrError[]) => SpyInstance<TFunc>;
+    throws: (msgOrError?: MessageOrError) => SpyInstance<TFunc>;
+    reset: () => SpyInstance<TFunc>;
+    restore: () => SpyInstance<TFunc>;
+    transparent: () => SpyInstance<TFunc>;
+    transparentAfter: (callCount: number) => SpyInstance<TFunc>;
+    addSnapshotSerializer: (serialize: string | ((...args: any[]) => string)) => SpyInstance<TFunc>;
     wasCalled: (callCount?: number) => void;
     hasCallHistory: (...callHistory: Array<any[] | any>) => void;
     wasNotCalled: () => void;
@@ -90,14 +69,14 @@ export type SpyInstance = {
     [Symbols.index]: number;
     [Symbols.isSpy]: boolean;
     [Symbols.func]: Function;
-    [Symbols.config]: SpyConfig;
+    [Symbols.config]: SpyInstanceConfig;
     [Symbols.onRestore]?: () => void;
 };
 
 const SpyHelperFunctions = {
     getCalls: (spy: SpyInstance) => {
         const allCalls = spy[Symbols.calls];
-        if (!DefaultSettings.enforceOrder) return allCalls;
+        if (!Config.enforceOrder) return allCalls;
         return allCalls.filter(({ order }) => order > CallOrder.lastCheck);
     },
 };
@@ -121,7 +100,7 @@ const SpyFunctions = {
      *                         for special configuration
      * @return {SpyInstance} <- BuilderPattern.
      */
-    configure(this: SpyInstance, config: Partial<SpyConfig>): SpyInstance {
+    configure(this: SpyInstance, config: Partial<SpyInstanceConfig>): SpyInstance {
         if (config.useOwnEquals !== undefined) {
             this[Symbols.config].useOwnEquals = config.useOwnEquals;
         }
@@ -709,20 +688,17 @@ const AllCreatedSpies: Array<SpyInstance> = [];
 
 type ISpy = {
     (name?: string): SpyInstance;
-    configure(
-        config: Partial<GeneralSpyConfig> & {
-            afterEach?: (scope: string) => void;
-            beforeEach?: (scope: string) => void;
-        }
-    ): void;
+    configure: typeof configure;
+    setup: typeof configureAll;
     IGNORE: Symbol;
     COMPARE: typeof COMPARE;
     MAPPER: typeof MAPPER;
-    on<T extends Mockable, K extends keyof T>(obj: T, methodName: K): SpyInstance;
-    mock<T extends Mockable, K extends keyof T>(obj: T, ...methodNames: K[]): { [P in K]: SpyInstance };
-    mockModule<K extends string>(moduleName: string, ...methodNames: K[]): { [P in K]: SpyInstance };
-    mockReactComponents<K extends string>(moduleName: string, ...methodNames: K[]): { [P in K]: SpyInstance };
-    initMocks(scope?: string): void;
+    on<T extends Mockable, K extends keyof T>(obj: T, methodName: K): SpyInstance<T[K]>;
+    mock<T extends Mockable, K extends keyof T>(obj: T, ...methodNames: K[]): { [P in K]: SpyInstance<T[P]> };
+    mockReactComponents<T extends Mockable, K extends keyof T>(
+        obj: T,
+        ...methodNames: K[]
+    ): { [P in K]: SpyInstance<T[P]> };
     restoreAll(): void;
     resetAll(): void;
 };
@@ -747,7 +723,7 @@ const _createSpy = (name: string = '', __mock?: any): SpyInstance => {
     spy[Symbols.isSpy] = true;
     spy[Symbols.func] = () => {};
     spy[Symbols.calls] = [];
-    spy[Symbols.config] = { ...DefaultSettings };
+    spy[Symbols.config] = { ...Config };
     Object.entries(SpyFunctions).forEach(([key, value]) => {
         spy[key] = value;
     });
@@ -796,29 +772,8 @@ const Spy: ISpy = (name?: string): SpyInstance => _createSpy(name);
  *
  * You may also override default test suite hooks
  * by providing afterEach or beforeEach respectively.
- *
- * @param {Object} config <- Holds the configuration params.
  */
-Spy.configure = (
-    config: Partial<GeneralSpyConfig> & {
-        afterEach?: (scoping: string) => void;
-        beforeEach?: (scoping: string) => void;
-    }
-): void => {
-    if (config.useOwnEquals !== undefined) {
-        DefaultSettings.useOwnEquals = config.useOwnEquals;
-    }
-    if (config.enforceOrder !== undefined) {
-        DefaultSettings.enforceOrder = config.enforceOrder;
-    }
-    if (config.useGenericReactMocks !== undefined) {
-        DefaultSettings.useGenericReactMocks = config.useGenericReactMocks;
-    }
-    TestSuite.configure({
-        afterEach: config.afterEach,
-        beforeEach: config.beforeEach,
-    });
-};
+Spy.configure = configure;
 
 /**
  * This static attribute can be used to ignore the match
@@ -865,7 +820,7 @@ Spy.MAPPER = MAPPER;
  *
  * @return {SpyInstance}
  */
-Spy.on = <T extends Mockable, K extends keyof T>(obj: T, methodName: K): SpyInstance => {
+Spy.on = <T extends Mockable, K extends keyof T>(obj: T, methodName: K): SpyInstance<T[K]> => {
     const method = obj[methodName];
     if (!(typeof method === 'function')) {
         throw new Error(
@@ -885,7 +840,7 @@ Spy.on = <T extends Mockable, K extends keyof T>(obj: T, methodName: K): SpyInst
     const spy = _createSpy(methodName as string, { obj, methodName });
     __LOCK__ = true;
     obj[methodName] = spy as any;
-    return spy;
+    return spy as any;
 };
 
 /**
@@ -906,45 +861,19 @@ Spy.on = <T extends Mockable, K extends keyof T>(obj: T, methodName: K): SpyInst
  *
  * (spy1 === obj$Mock.methodName1 and so forth)
  *
- * @param {Object} obj -> The manipulated object. Actual type:
+ * @param {Object} obj -> the object to be mocked.
+ * @param {string[]} methodNames -> Iterative provided attribute
+ *                                  names that will be mocked.
+ *
+ * @return {Object} Mock. -> The manipulated object. Actual type:
  *                        Before initialization: { [$Keys<typeof methodNames>]: Throwing function }
  *                        After initialization: { [$Keys<typeof methodNames>]: SpyInstance }
- * @param {string[]} methodNames -> Iterative provided attribute
- *                                  names that will be mocked.
- *
- * @return {Object} Mock.
  */
-Spy.mock = <T extends Mockable, K extends keyof T>(obj: T, ...methodNames: K[]): { [P in K]: SpyInstance } =>
-    createMock(obj, methodNames);
+Spy.mock = <T extends Mockable, K extends keyof T>(obj: T, ...methodNames: K[]): { [P in K]: SpyInstance<T[P]> } =>
+    createMock(obj, methodNames, Spy.on);
 
 /**
- * This static method enables you to create mocks on module scope.
- * As long as jest will support this behavior, the Spy will too. If
- * you are calling this function on other test runners you will
- * encounter an exception. You should favor to use "Spy.mock" but there
- * might be reasons that this will not work. E.g. if you want to mock
- * directly exported functions.
- *
- * For example:
- *
- * const Mock$MyModule = Spy.mockModule('./my-module', 'useMe');
- *
- * Now you could do:
- * Mock$MyModule.useMe.returns(['foo', 'bar']);
- *
- * @param {string} moduleName -> Everything that's expected by "jest.mock"
- *                               as first parameter. Relative and absolute
- *                               module paths.
- * @param {string[]} methodNames -> Iterative provided attribute
- *                                  names that will be mocked.
- *
- * @return {Object} Mock.
- */
-Spy.mockModule = <K extends string>(moduleName: string, ...methodNames: K[]): { [P in K]: SpyInstance } =>
-    TestSuite.createModuleMock(moduleName, methodNames);
-
-/**
- * This static method is very similar to "Spy.mockModule" but perfectly
+ * This static method is very similar to "Spy.mock" but perfectly
  * suited for testing with React components. When using testing tools
  * that render the whole subtree it is sometimes better to mock parts
  * of your nested components.
@@ -953,39 +882,19 @@ Spy.mockModule = <K extends string>(moduleName: string, ...methodNames: K[]): { 
  * instead of "undefined" as default. This is a minimal valid React
  * component.
  *
- * @param {string} moduleName -> Everything that's expected by "jest.mock"
- *                               as first parameter. Relative and absolute
- *                               module paths.
+ * @param {Object} obj -> the object to be mocked.
  * @param {string[]} methodNames -> Iterative provided attribute
  *                                  names that will be mocked.
  *
- * @return {Object} Mock.
+ * @return {Object} Mock. -> The manipulated object. Actual type:
+ *                        Before initialization: { [$Keys<typeof methodNames>]: Throwing function }
+ *                        After initialization: { [$Keys<typeof methodNames>]: SpyInstance }
  */
-Spy.mockReactComponents = <K extends string>(moduleName: string, ...methodNames: K[]): { [P in K]: SpyInstance } =>
-    TestSuite.createModuleMock(
-        moduleName,
-        methodNames,
-        DefaultSettings.useGenericReactMocks ? createGenericComponent : createMinimalComponent
-    );
-
-/**
- * This static method initializes all created
- * mocks (see Spy.mock). This is necessary, because
- * it has to apply before each test run, to ensure
- * that restored spies apply again. This makes
- * automated cleaned up spies possible.
- *
- * Usually it should get called within one "beforeEach"-Hook.
- *
- * @param {string | void} scope -> A string identifying the scope.
- *                                 Scopes should not be used only in
- *                                 combination of custom beforeEach and
- *                                 afterEach-Hooks.
- *
- */
-Spy.initMocks = (scope?: string): void => {
-    initMocks(Spy.on, scope);
-};
+Spy.mockReactComponents = <T extends Mockable, K extends keyof T>(
+    obj: T,
+    ...methodNames: K[]
+): { [P in K]: SpyInstance<T[P]> } =>
+    createMock(obj, methodNames, Spy.on, Config.useGenericReactMocks ? createGenericComponent : createMinimalComponent);
 
 /**
  * This static method does restore all
@@ -1015,14 +924,38 @@ Spy.resetAll = (): void => {
     AllCreatedSpies.forEach((spy) => spy.reset());
 };
 
-const defaultHooks = {
-    beforeEach: Spy.initMocks,
-    afterEach: () => {
-        Spy.restoreAll();
-        Spy.resetAll();
-    },
+const defaultAfterEachCb = () => {
+    Spy.restoreAll();
+    Spy.resetAll();
 };
 
-TestSuite.configure(defaultHooks);
+Spy.setup = (config): void => {
+    configureAll(config);
+    const { beforeEach, afterEach, expect, runner } = Config;
+    if (!beforeEach || !afterEach || !expect) {
+        const vitestHint =
+            runner === 'vitest'
+                ? ` E.g. like this:
+
+import { beforeEach, afterEach, expect } from 'vitest';
+
+Spy.setup({ beforeEach, afterEach, expect });`
+                : '';
+        throw new Error(`Please provide "beforeEach", "afterEach" and "expect" functions.${vitestHint}`);
+    }
+
+    afterEach(() => {
+        const cb = Config?.afterEachCb || defaultAfterEachCb;
+        cb();
+    });
+
+    /**
+     * Specific snapshot serialization behavior.
+     */
+    expect.addSnapshotSerializer({
+        test: (v: any) => v && v[Symbols.isSpy],
+        print: (spy: SpyInstance) => spy[Symbols.snap],
+    });
+};
 
 export { Spy };

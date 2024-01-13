@@ -5,6 +5,9 @@
  *
  */
 import { Spy } from '../../src/spy';
+import { beforeEach, afterEach, expect, describe, it } from 'vitest';
+
+Spy.setup({ beforeEach, afterEach, expect });
 
 const IRL = {
     saveTheWorld: () => 'feed some koalas',
@@ -24,7 +27,7 @@ const IRL$Mock = Spy.mock(IRL, 'saveTheWorld', 'giveBanana');
 
 const Matrix$Mock = Spy.mock(Matrix, 'startup');
 
-describe('Spy - Global- Mocks', () => {
+describe('Spy - Global - Mocks', () => {
     it('IRL$Mock: did mock the methods and applied spies', () => {
         IRL$Mock.saveTheWorld.returns('saved it!');
 
@@ -38,7 +41,7 @@ describe('Spy - Global- Mocks', () => {
     });
 
     it('Matrix$Mock: did mock the methods and applied spies', () => {
-        Matrix$Mock.startup.returns('done');
+        Matrix$Mock.startup.returns('done' as any);
 
         expect(Matrix.startup()).toBe('done');
         expect(Matrix.tearDown()).toBe(1337);
@@ -57,9 +60,9 @@ describe('Spy - Scoped - Mocks - 1', () => {
     const Guy$Mock = Spy.mock(Guy, 'swim');
 
     it('Guy$Mock: mocks swim to return 42', () => {
-        Guy$Mock.swim.returns(42);
+        Guy$Mock.swim.returns('42');
 
-        expect(Guy.swim()).toBe(42);
+        expect(Guy.swim()).toBe('42');
         expect(Guy.goTo('park')).toBe('go to --> park');
 
         expect((Guy$Mock as any).goTo).toBe(undefined);
@@ -71,10 +74,10 @@ describe('Spy - Scoped - Mocks - 2', () => {
     const Guy$Mock = Spy.mock(Guy, 'swim', 'goTo');
 
     it('Guy$Mock: mocks swim to return 12', () => {
-        Guy$Mock.swim.returns(12);
+        Guy$Mock.swim.returns('12');
         Guy$Mock.goTo.calls((s: any) => s);
 
-        expect(Guy.swim()).toBe(12);
+        expect(Guy.swim()).toBe('12');
         expect(Guy.goTo('park')).toBe('park');
 
         Guy$Mock.swim.wasCalled(1);

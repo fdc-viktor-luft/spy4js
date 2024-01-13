@@ -6,6 +6,7 @@
  */
 
 import { serialize, IGNORE } from '../src/serializer';
+import { describe, it, expect } from 'vitest';
 
 describe('serialize', () => {
     it('serializes arrays with IGNORED entry', () => {

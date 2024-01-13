@@ -4,7 +4,11 @@
  * The LICENSE file can be found in the root directory of this project.
  *
  */
-import { createMock, initMocks, _mocks, setScope, defaultScope, Mockable } from '../../src/mock';
+import { createMock } from '../../src/mock';
+import { Spy } from '../../src/spy';
+import { beforeEach, afterEach, expect, describe, it } from 'vitest';
+
+Spy.setup({ beforeEach, afterEach, expect });
 
 const IRL = {
     saveTheWorld: () => 'feed some koalas',
@@ -14,52 +18,57 @@ const IRL = {
 
 const Matrix = { tearDown: () => 1337, startup: () => 1 };
 
-const testSpyOn = (obj: Mockable, method: keyof typeof obj) => obj[method];
-
-describe('Mocks', () => {
-    beforeEach(() => {
-        _mocks[defaultScope].length = 0;
-        setScope(undefined);
-    });
+describe('Mocks - 1', () => {
+    const IRL$Mock = createMock(IRL, ['doWithTree', 'giveBanana'], Spy.on);
+    const { doWithTree, giveBanana, saveTheWorld } = IRL$Mock as any;
 
     it('creates uninitialized mocks', () => {
-        const IRL$Mock = createMock(IRL, ['doWithTree', 'giveBanana']);
-
-        expect(_mocks[defaultScope].length).toBe(1);
-        expect(_mocks[defaultScope][0].mock).toBe(IRL$Mock);
-        expect(_mocks[defaultScope][0].mocked).toBe(IRL);
-
-        expect((IRL$Mock as any).saveTheWorld).toBe(undefined);
-        expect(IRL$Mock.doWithTree).toThrowErrorMatchingInlineSnapshot(
-            `"Method 'doWithTree' was not initialized on Mock."`
-        );
-        expect(IRL$Mock.giveBanana).toThrowErrorMatchingInlineSnapshot(
-            `"Method 'giveBanana' was not initialized on Mock."`
-        );
+        expect(saveTheWorld).toBe(undefined);
+        expect(doWithTree).toThrowError("Method 'doWithTree' was not initialized on Mock.");
+        expect(giveBanana).toThrowError("Method 'giveBanana' was not initialized on Mock.");
     });
+});
+
+describe('Mocks - 2', () => {
+    const IRL$Mock = createMock(IRL, ['doWithTree', 'giveBanana'], Spy.on);
 
     it('mocks specified methods', () => {
-        setScope('Test Scope');
-        const IRL$Mock = createMock(IRL, ['doWithTree', 'giveBanana']);
-        expect(_mocks['Test Scope'].length).toBe(1);
-        initMocks(testSpyOn, 'Test Scope');
-
         expect((IRL$Mock as any).saveTheWorld).toBe(undefined);
+        IRL$Mock.doWithTree.transparent();
         expect(IRL$Mock.doWithTree('kiss')).toBe('kiss the tree');
+        IRL$Mock.giveBanana.transparent();
         expect(IRL$Mock.giveBanana('Joe')).toBe('Give Joe a banana');
+
+        IRL$Mock.doWithTree.configure({ persistent: true });
+        IRL$Mock.doWithTree.returns('was persisted');
     });
 
-    it('creates multiple mocks', () => {
-        const IRL$Mock = createMock(IRL, ['saveTheWorld']);
-        const Matrix$Mock = createMock(Matrix, ['tearDown']);
-        expect(_mocks[defaultScope].length).toBe(2);
-        initMocks(testSpyOn);
+    it('allows to persist mocks', () => {
+        expect(IRL.doWithTree('whatever')).toBe('was persisted');
+        IRL$Mock.doWithTree.configure({ persistent: false });
+    });
+});
 
+describe('Mocks - 3', () => {
+    const IRL$Mock = createMock(IRL, ['saveTheWorld'], Spy.on);
+    const Matrix$Mock = createMock(Matrix, ['tearDown'], Spy.on);
+
+    it('creates multiple mocks', () => {
+        IRL$Mock.saveTheWorld.transparent();
         expect(IRL$Mock.saveTheWorld()).toBe('feed some koalas');
         expect((IRL$Mock as any).doWithTree).toBe(undefined);
         expect((IRL$Mock as any).giveBanana).toBe(undefined);
 
+        Matrix$Mock.tearDown.transparent();
         expect(Matrix$Mock.tearDown()).toBe(1337);
         expect((Matrix$Mock as any).startup).toBe(undefined);
+    });
+});
+
+describe('Mocks - 4', () => {
+    it('fails if called within test', () => {
+        // skip for "bun test"
+        if ((global as any).Bun) return;
+        expect(() => createMock(IRL, ['doWithTree'], Spy.on)).toThrow('Mocks can only be created outside of tests');
     });
 });

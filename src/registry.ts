@@ -82,7 +82,7 @@ export class SpyRegistry {
         this.registerCount += 1;
         this.register[this.registerCount] = {
             obj,
-            method: obj[methodName],
+            method: obj[methodName] as Function,
             methodName,
         };
         return this.registerCount;

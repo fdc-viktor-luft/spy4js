@@ -5,6 +5,9 @@
  *
  */
 import { Spy } from '../../src/spy';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+
+Spy.setup({ expect, beforeEach, afterEach });
 
 describe('enforceOrder', () => {
     beforeEach(() => {

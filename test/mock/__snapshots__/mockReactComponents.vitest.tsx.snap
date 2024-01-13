@@ -1,0 +1,53 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`mockReactComponents - generic > renders component snapshot - contained mock 1`] = `
+<div>
+  <div
+    id="component-3"
+  >
+    <samp
+      data-component="Component1"
+      data-prop-foo="'in-component-3'"
+    />
+  </div>
+</div>
+`;
+
+exports[`mockReactComponents - generic > renders component snapshot - nested mocks - without props 1`] = `
+<div>
+  <samp
+    data-component="Component2"
+  >
+    <samp
+      data-component="Component1"
+    />
+    <div>
+      More children
+    </div>
+  </samp>
+</div>
+`;
+
+exports[`mockReactComponents - generic > renders component snapshot - nested mocks 1`] = `
+<div>
+  <samp
+    data-component="Component2"
+  >
+    <samp
+      data-component="Component1"
+      data-prop-foo="'bar'"
+      data-prop-onemore="{data: Symbol(oneMore), elem: <div>Test</div>}"
+    />
+  </samp>
+</div>
+`;
+
+exports[`mockReactComponents - minimal > renders component snapshot - contained mock 1`] = `
+<div>
+  <div
+    id="component-3"
+  />
+</div>
+`;
+
+exports[`mockReactComponents - minimal > renders component snapshot - nested mocks 1`] = `<div />`;

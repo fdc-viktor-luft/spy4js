@@ -5,6 +5,9 @@
  *
  */
 import { Spy, SpyInstance } from '../src/spy';
+import { beforeEach, afterEach, expect, describe, it } from 'vitest';
+
+Spy.setup({ enforceOrder: false, beforeEach, afterEach, expect });
 
 describe('Spy - Utils', () => {
     class CustomError extends Error {
@@ -96,79 +99,6 @@ describe('Spy - Utils', () => {
         const spy = Spy();
         spy(123);
         expect(() => spy.getCallArguments(0.5)).toThrow(/.*callNr "0.5" was not valid.*/);
-    });
-
-    it('should restore all Spies', (cb) => {
-        const testObject = {
-            func1: noop,
-            func2: errorThrower,
-            func3: (arg: string) => {
-                expect(arg).toEqual('testCall8');
-                cb();
-            },
-            func4: errorThrower,
-        };
-        Spy.restoreAll();
-        const testObject$Mock = Spy.mock(testObject, 'func1', 'func2', 'func3', 'func4');
-        Spy.initMocks();
-        testObject.func1('testCall1');
-        testObject.func2('testCall2');
-        testObject.func3('testCall3');
-        testObject.func4('testCall4');
-
-        // this removes all spies from the testObject,
-        // but does not destroy their functionality
-        Spy.restoreAll();
-
-        testObject.func1('testCall5');
-        expect(() => testObject.func2('testCall6')).toThrow();
-        testObject$Mock.func1.wasCalledWith('testCall1');
-        expect(() => testObject$Mock.func1.wasCalledWith('testCall5')).toThrow();
-        expect(() => testObject$Mock.func2.wasCalledWith('testCall6')).toThrow();
-        if (testObject$Mock.func1 instanceof Function) {
-            testObject$Mock.func1('testCall7');
-        } else {
-            throw new Error('spy should always be callable');
-        }
-        testObject$Mock.func1.wasCalledWith('testCall7');
-        // if this would get spied, the test callback would
-        // never be called which would make the test fail
-        testObject.func3('testCall8');
-    });
-
-    it('should restore single Spies', (cb) => {
-        const testObject = {
-            func1: noop,
-            func2: errorThrower,
-            func3: (arg: string) => {
-                expect(arg).toEqual('testCall8');
-                cb();
-            },
-            func4: errorThrower,
-        };
-        Spy.restoreAll();
-        const testObject$Mock = Spy.mock(testObject, 'func1', 'func2', 'func3', 'func4');
-        Spy.initMocks();
-        testObject.func1('testCall1');
-        testObject.func2('testCall2');
-        testObject.func3('testCall3');
-        testObject.func4('testCall4');
-
-        // this removes first spy from the testObject
-        testObject$Mock.func1.restore();
-
-        testObject.func1('testCall5');
-        testObject.func3('testCall6');
-
-        testObject$Mock.func1.wasCalledWith('testCall1');
-        expect(() => testObject$Mock.func1.wasCalledWith('testCall5')).toThrow();
-
-        testObject$Mock.func3.wasCalledWith('testCall3');
-        testObject$Mock.func3.wasCalledWith('testCall6');
-        testObject$Mock.func3.restore();
-        // if this would get spied, the test callback
-        // would never be called which would make the test fail
-        testObject.func3('testCall8');
     });
 
     it('should recognize when the Spy was not called', () => {
@@ -362,6 +292,45 @@ describe('Spy - Utils', () => {
         expect(await p4).toBe(testObj3);
     });
 
+    it('fulfills type requirements', async () => {
+        const funcs = {
+            num: () => 123,
+            str: () => 'foo',
+            prom: async () => 123n,
+            mixed: (arg: string | Promise<number>) => arg,
+        };
+        Spy.on(funcs, 'num').returns(111).restore();
+        // @ts-expect-error
+        Spy.on(funcs, 'num').returns('111').restore();
+        // @ts-expect-error
+        Spy.on(funcs, 'num').rejects().restore();
+        // @ts-expect-error
+        Spy.on(funcs, 'num').resolves(111).restore();
+
+        // @ts-expect-error
+        Spy.on(funcs, 'str').returns(111).restore();
+        Spy.on(funcs, 'str').returns('111').restore();
+        // @ts-expect-error
+        Spy.on(funcs, 'str').rejects().restore();
+        // @ts-expect-error
+        Spy.on(funcs, 'str').resolves(111).restore();
+
+        // @ts-expect-error
+        Spy.on(funcs, 'prom').returns(111n).restore();
+        Spy.on(funcs, 'prom').rejects().restore();
+        // @ts-expect-error
+        Spy.on(funcs, 'prom').resolves(111).restore();
+        Spy.on(funcs, 'prom').resolves(111n).restore();
+
+        Spy.on(funcs, 'mixed').returns('111').restore();
+        // @ts-expect-error
+        Spy.on(funcs, 'mixed').returns(111n).restore();
+        Spy.on(funcs, 'mixed').rejects().restore();
+        Spy.on(funcs, 'mixed').resolves(111).restore();
+        // @ts-expect-error
+        Spy.on(funcs, 'mixed').resolves('111').restore();
+    });
+
     it('rejects default error if no arguments were provided to rejects', async () => {
         const spy = Spy().rejects();
 
@@ -421,11 +390,15 @@ describe('Spy - Utils', () => {
         expect(() => spy({ _key: 'callParams4' })).toThrow(/^CustomError\('bar'\)$/);
     });
 
-    it('should reset the call arguments on an object spy and NOT removing it (LIKE RESTORE)', (cb) => {
+    it('should reset the call arguments on an object spy and NOT removing it (LIKE RESTORE)', async () => {
+        let resolve: any = null;
+        const p = new Promise<undefined>((r) => {
+            resolve = r;
+        });
         const testObject = {
             func: (allowed: string) => {
                 expect(allowed).toEqual('testCall3');
-                cb();
+                resolve();
             },
         };
         const spy = Spy.on(testObject, 'func');
@@ -444,6 +417,7 @@ describe('Spy - Utils', () => {
         // if this would get spied, the test callback
         // would never be called which would make the test fail
         testObject.func('testCall3');
+        await p;
     });
 
     it('should call NOP if no input-function is supplied', () => {
@@ -678,7 +652,7 @@ describe('Spy - Utils', () => {
     const testInstance4 = new TestClass(5);
 
     it('should use own "equals" implementations as default, but is able to reconfigure this behavior', () => {
-        const spy = Spy();
+        const spy = Spy().configure({ useOwnEquals: true });
 
         spy(testInstance1);
 
@@ -742,8 +716,8 @@ describe('Spy - Utils', () => {
             spy.wasNotCalledWith(testInstance4);
         };
 
-        wasCalledChecksForOwnEquals(defaultSpy1);
-        wasCalledChecksForOwnEquals(defaultSpy2);
+        wasCalledChecksForNotOwnEquals(defaultSpy1);
+        wasCalledChecksForNotOwnEquals(defaultSpy2);
 
         wasCalledChecksForNotOwnEquals(configuredSpy1);
         wasCalledChecksForNotOwnEquals(configuredSpy2);
@@ -860,6 +834,8 @@ describe('Spy - Utils', () => {
     });
 
     it('overrides the snapshot rendering of spies', () => {
+        // skip for "bun test"
+        if ((global as any).Bun) return;
         expect(Spy()).toMatchInlineSnapshot('Spy()');
         expect(Spy('foo')).toMatchInlineSnapshot('Spy(foo)');
         const testObj = { func: () => {} };
@@ -868,6 +844,8 @@ describe('Spy - Utils', () => {
     });
 
     it('allows custom snapshot rendering of spies', () => {
+        // skip for "bun test"
+        if ((global as any).Bun) return;
         const spy = Spy().addSnapshotSerializer((foo) => `Called with ${foo}`);
         expect(spy).toMatchInlineSnapshot('Called with undefined');
 
@@ -889,7 +867,7 @@ describe('Spy - Utils', () => {
 
         expect(foo.bar).toThrowError('waiting');
 
-        Spy.on(foo, 'bar').returns('spied!');
+        Spy.on(foo, 'bar').returns('spied!' as any);
         expect(foo.bar()).toBe('spied!');
     });
 
@@ -904,13 +882,14 @@ describe('Spy - Utils', () => {
         const foo = new Foo();
         expect(() => foo.bar()).toThrowError('waiting');
 
-        Spy.on(foo, 'bar').returns('spied!');
+        Spy.on(foo, 'bar').returns('spied!' as any);
         expect(foo.bar()).toBe('spied!');
     });
 
     it('can spy on bound functions (bound to internal objects)', () => {
-        const spy = Spy.on(window.console, 'error').returns('spied!');
-        expect(window.console.error('foo')).toBe('spied!');
+        const spy = Spy.on(console, 'error').returns('spied!' as any);
+        // eslint-disable-next-line no-console
+        expect(console.error('foo')).toBe('spied!');
         spy.hasCallHistory('foo');
     });
 
